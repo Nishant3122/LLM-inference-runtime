@@ -12,3 +12,7 @@ add_test(NAME tokenizer_test COMMAND tokenizer_test ${CMAKE_SOURCE_DIR}/models/v
 add_executable(model_test model_test.cpp)
 target_link_libraries(model_test PRIVATE runtime)
 add_test(NAME model_test COMMAND model_test ${CMAKE_SOURCE_DIR}/models/model.bin ${CMAKE_SOURCE_DIR}/tests/golden)
+
+add_executable(kv_cache_test kv_cache_test.cpp)
+target_link_libraries(kv_cache_test PRIVATE runtime)
+add_test(NAME kv_cache_test COMMAND kv_cache_test ${CMAKE_SOURCE_DIR}/models/model.bin)

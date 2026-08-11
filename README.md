@@ -11,14 +11,14 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 
 ## Status
 
-**Phase 1 — CPU Runtime, done** (see [Development Phases](docs/architecture.md#development-phases))
+**Phase 2 — KV Cache, done** (see [Development Phases](docs/architecture.md#development-phases))
 
 | Phase | Status |
 |---|---|
 | 0 — Architecture & reference model | ✅ done |
 | 1 — CPU runtime | ✅ done — see `runtime/`, validated by `tests/model_test.cpp` against `tests/golden/` |
-| 2 — KV cache | ⬜ next |
-| 3 — CUDA backend | ⬜ not started |
+| 2 — KV cache | ✅ done — see `runtime/cache/`; cached vs. recomputed logits match exactly (max abs diff = 0); **24.6x**–**72.3x** measured speedup, see `runtime/cache/README.md` |
+| 3 — CUDA backend | ⬜ next |
 | 4 — CUDA optimization | ⬜ not started |
 | 5 — Quantization | ⬜ not started |
 | 6 — Batching | ⬜ not started |
@@ -64,15 +64,16 @@ python dump_golden.py               # dump golden activations -> ../tests/golden
 ```powershell
 cmake -S . -B build -G "Visual Studio 17 2022" -A x64
 cmake --build build --config RelWithDebInfo
-ctest --test-dir build -C RelWithDebInfo --output-on-failure   # tensor/tokenizer/model tests
+ctest --test-dir build -C RelWithDebInfo --output-on-failure   # tensor/tokenizer/model/kv_cache tests
 
 .\build\examples\RelWithDebInfo\generate_example.exe models\model.bin models\vocab.bin "The cat" 200 0.8 20
 ```
 
 No PyTorch/libtorch involved in that last step (G2, `docs/architecture.md` §4) — pure
-C++ loading `model.bin` and running the forward pass itself. No KV cache yet (Phase 2),
-so generation cost grows roughly quadratically with total sequence length; see
-`runtime/execution/README.md` for a timing baseline.
+C++ loading `model.bin` and running the forward pass itself. Generation uses a
+persistent KV cache by default (Phase 2) — pass `--no-cache` as a trailing argument to
+fall back to the Phase 1 recompute-everything path and compare timings yourself; see
+`runtime/cache/README.md` for the measured **24.6x**–**72.3x** speedup.
 
 ## Repository layout
 

@@ -10,6 +10,7 @@
 
 #include <vector>
 
+#include "../cache/kv_cache.h"
 #include "../model/model.h"
 
 namespace rt::execution {
@@ -23,7 +24,24 @@ struct ForwardResult {
 };
 
 // ids.size() must not exceed model.config.context_length (throws std::out_of_range
-// otherwise, via runtime/transformer/embedding.cpp).
+// otherwise, via runtime/transformer/embedding.cpp). Phase 1 baseline: no cache, full
+// recompute every call — see runtime/execution/README.md for measured cost.
 ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids);
+
+// Phase 2: same computation as forward(), but also seeds `kv` with every layer's K/V
+// for `ids` (typically the prompt, starting a fresh sequence at position 0). Use this
+// once per sequence, then decode_step() for every token after.
+ForwardResult prefill(const model::Model& model, const std::vector<int32_t>& ids,
+                       cache::KVCache& kv);
+
+// Phase 2: run exactly one new token through the model using `kv`, which must already
+// hold every prior position's K/V (from a preceding prefill()/decode_step() call).
+// `position` is this token's absolute index in the sequence — decode_step() only ever
+// sees one token, so it can't infer position from an ids vector the way forward()/
+// prefill() do; the caller (which is tracking kv.length()) must supply it.
+// Returns just this token's logits ([vocab_size]) — a decode step never needs any
+// other position's output.
+std::vector<float> decode_step(const model::Model& model, int32_t token_id, uint32_t position,
+                                cache::KVCache& kv);
 
 }  // namespace rt::execution

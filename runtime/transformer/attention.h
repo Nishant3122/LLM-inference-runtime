@@ -10,6 +10,7 @@
 // tests/golden/*/block_*_output.npy.
 #pragma once
 
+#include "../cache/kv_cache.h"
 #include "../core/tensor.h"
 
 namespace rt::transformer {
@@ -23,6 +24,22 @@ struct AttentionWeights {
 
 // x: [T, D]: y: [T, D] (pre-allocated, may alias nothing — caller owns storage).
 // n_heads must divide D (checked at Model load time, re-asserted here defensively).
-void causal_self_attention(const Tensor& x, const AttentionWeights& w, int n_heads, Tensor& y);
+//
+// If kv_out != nullptr, this call's computed K and V (for all T positions) are also
+// appended to it — used by Phase 2's prefill to seed the cache while computing the
+// prompt's forward pass exactly as Phase 1 always has (same operations, same order,
+// so results are unchanged and tests/model_test.cpp keeps passing untouched).
+void causal_self_attention(const Tensor& x, const AttentionWeights& w, int n_heads, Tensor& y,
+                            cache::LayerKVCache* kv_out = nullptr);
+
+// Phase 2 decode step: x is exactly one token's pre-attention activations ([1, D]).
+// Computes this token's Q/K/V, appends K/V to `kv` (kv.length() grows by 1), then
+// attends Q against kv's full history — all positions [0, kv.length()) after the
+// append, which includes this token itself. Numerically this produces exactly the
+// row causal_self_attention() would produce for this token if the whole sequence
+// were recomputed from scratch (see runtime/cache/README.md for why: per-row ops
+// don't depend on what other rows are being computed alongside them).
+void causal_self_attention_cached(const Tensor& x, const AttentionWeights& w, int n_heads,
+                                   cache::LayerKVCache& kv, Tensor& y);
 
 }  // namespace rt::transformer

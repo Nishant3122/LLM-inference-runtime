@@ -1,13 +1,18 @@
 # Phase 1: renamed from `runtime_core` (Phase 0) to `runtime` now that this target
 # covers core + model + transformer + execution + sampling, not just the Tensor
-# abstraction. cache/, quantization/, scheduler/ still have no sources (Phase 2/5/6+)
-# — see the README.md in each.
+# abstraction. Phase 2 adds cache/. quantization/, scheduler/ still have no sources
+# (Phase 5/6+) — see the README.md in each.
 add_library(runtime STATIC
     core/tensor.h
     core/shape.h
     core/types.h
     core/version.h
     core/version.cpp
+
+    cache/kv_cache.h
+    cache/kv_cache.cpp
+    cache/cache_manager.h
+    cache/cache_manager.cpp
 
     model/model_config.h
     model/model.h

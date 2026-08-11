@@ -17,6 +17,15 @@ struct BlockWeights {
 };
 
 // x: [T, D], updated in place (residual adds applied directly to x's buffer).
-void transformer_block_forward(Tensor& x, const BlockWeights& w, int n_heads);
+// If kv_out != nullptr, this layer's K/V for all T positions are appended to it
+// (Phase 2 prefill — see causal_self_attention's kv_out parameter).
+void transformer_block_forward(Tensor& x, const BlockWeights& w, int n_heads,
+                                cache::LayerKVCache* kv_out = nullptr);
+
+// Phase 2 decode step: x is exactly one token's activations ([1, D]), updated in
+// place. Uses (and grows) this layer's persistent KV cache instead of recomputing
+// attention over the whole sequence.
+void transformer_block_forward_cached(Tensor& x, const BlockWeights& w, int n_heads,
+                                       cache::LayerKVCache& kv);
 
 }  // namespace rt::transformer

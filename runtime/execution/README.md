@@ -1,13 +1,20 @@
-# runtime/execution — Phase 1 (CPU) ✅ / Phase 3 (CUDA)
+# runtime/execution — Phase 1 (CPU) ✅ / Phase 2 (KV cache) ✅ / Phase 3 (CUDA)
 
-- `cpu_backend.h/.cpp` — `forward(model, ids)` drives embedding -> N transformer
-  blocks -> final norm -> LM head, returning every intermediate (not just logits) so
-  `tests/model_test.cpp` can check each one against `tests/golden/`. No KV cache: every
-  call recomputes attention/MLP over the full sequence — this is the Phase 1 baseline
-  Phase 2's with/without-cache ablation (spec §32) measures against. Ad hoc timing on
-  this machine: 50-token generation from a 7-token prompt (Stage-1 config, `T` growing
-  to 57) took ~2.4s; the quadratic-ish per-step cost (attention is `O(T^2)`, and every
-  step recomputes from scratch) is expected to dominate until Phase 2.
+- `cpu_backend.h/.cpp`:
+  - `forward(model, ids)` — Phase 1 baseline: drives embedding -> N transformer blocks
+    -> final norm -> LM head, returning every intermediate (not just logits) so
+    `tests/model_test.cpp` can check each one against `tests/golden/`. No KV cache:
+    every call recomputes attention/MLP over the full sequence.
+  - `prefill(model, ids, kv)` — Phase 2: identical computation to `forward()`, but also
+    seeds `kv` with every layer's K/V for `ids` (typically the prompt).
+  - `decode_step(model, token_id, position, kv)` — Phase 2: runs exactly one new token
+    through the model using `kv`'s existing history, growing it by one row. Returns
+    just that token's logits.
+
+  Measured speedup from using the cache (`runtime/cache/README.md` has the full
+  breakdown): **24.6x at 50 generated tokens, 72.3x at 200** — and the gap widens with
+  length, since the uncached path's dominant cost (redoing every linear/MLP layer for
+  every position, every step) is `O(N^2)` while the cached path's is `O(N)`.
 
 Still to come:
 

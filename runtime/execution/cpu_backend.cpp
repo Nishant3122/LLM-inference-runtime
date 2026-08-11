@@ -7,7 +7,13 @@
 
 namespace rt::execution {
 
-ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids) {
+namespace {
+
+// Shared by forward() and prefill(): identical computation either way (kv == nullptr
+// for forward(), non-null for prefill()) — see causal_self_attention's kv_out
+// parameter for why this doesn't change any result.
+ForwardResult forward_impl(const model::Model& model, const std::vector<int32_t>& ids,
+                            cache::KVCache* kv) {
     ForwardResult result;
     result.T = static_cast<uint32_t>(ids.size());
     result.D = model.config.d_model;
@@ -18,15 +24,14 @@ ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids
                  Device::CPU);
     transformer::embedding_forward(model.tok_embedding, model.pos_embedding, ids, emb_t);
 
-    // x is mutated in place through each block (residual adds happen on this buffer);
-    // block_outputs[i] is a snapshot copy for golden-output comparison.
     std::vector<float> x = result.embedding_output;
     Tensor x_t(x.data(), Shape{result.T, result.D}, DataType::FP32, Device::CPU);
 
     result.block_outputs.resize(model.layers.size());
     for (size_t i = 0; i < model.layers.size(); ++i) {
+        cache::LayerKVCache* layer_kv = kv != nullptr ? &kv->layer(static_cast<uint32_t>(i)) : nullptr;
         transformer::transformer_block_forward(x_t, model.layers[i],
-                                                 static_cast<int>(model.config.n_heads));
+                                                 static_cast<int>(model.config.n_heads), layer_kv);
         result.block_outputs[i] = x;
     }
 
@@ -40,6 +45,44 @@ ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids
     ops::linear(final_norm_t, model.lm_head_w, model.lm_head_b, logits_t);
 
     return result;
+}
+
+}  // namespace
+
+ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids) {
+    return forward_impl(model, ids, nullptr);
+}
+
+ForwardResult prefill(const model::Model& model, const std::vector<int32_t>& ids,
+                       cache::KVCache& kv) {
+    return forward_impl(model, ids, &kv);
+}
+
+std::vector<float> decode_step(const model::Model& model, int32_t token_id, uint32_t position,
+                                cache::KVCache& kv) {
+    const uint32_t D = model.config.d_model;
+    const uint32_t V = model.config.vocab_size;
+
+    std::vector<float> x(D);
+    Tensor x_t(x.data(), Shape{1, D}, DataType::FP32, Device::CPU);
+    transformer::embedding_forward(model.tok_embedding, model.pos_embedding, {token_id}, x_t,
+                                    position);
+
+    for (size_t i = 0; i < model.layers.size(); ++i) {
+        transformer::transformer_block_forward_cached(
+            x_t, model.layers[i], static_cast<int>(model.config.n_heads),
+            kv.layer(static_cast<uint32_t>(i)));
+    }
+
+    std::vector<float> final_norm(D);
+    Tensor final_norm_t(final_norm.data(), Shape{1, D}, DataType::FP32, Device::CPU);
+    transformer::layer_norm(x_t, model.ln_f_w, model.ln_f_b, final_norm_t);
+
+    std::vector<float> logits(V);
+    Tensor logits_t(logits.data(), Shape{1, V}, DataType::FP32, Device::CPU);
+    ops::linear(final_norm_t, model.lm_head_w, model.lm_head_b, logits_t);
+
+    return logits;
 }
 
 }  // namespace rt::execution

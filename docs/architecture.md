@@ -144,7 +144,7 @@ each later phase can be A/B'd against the previous one.
 |---|---|---|
 | 0 | Architecture, model format, reference model, benchmark harness skeleton, correctness-test skeleton | ✅ done |
 | 1 | C++ CPU runtime: Tensor, model loader, embedding, attention, MLP, norm, sampling | ✅ done (2026-08-12) — `tests/model_test.cpp` matches the PyTorch reference to ~1e-6; `examples/generate.cpp` produces coherent text end-to-end with no PyTorch involved at inference (G1, G2) |
-| 2 | KV cache + cache manager, benchmark with/without cache | ⬜ next |
+| 2 | KV cache + cache manager, benchmark with/without cache | ✅ done (2026-08-12) — `tests/kv_cache_test.cpp`: cached vs. recomputed logits match with max abs diff **= 0**; measured **24.6x** speedup at 50 generated tokens, **72.3x** at 200 (`runtime/cache/README.md`, spec §29 Q1) |
 | 3 | CUDA backend: tensor ops, matmul, attention, softmax, norm, MLP | ⬜ |
 | 4 | CUDA optimization: coalescing, shared memory, fusion, buffer reuse (profile first) | ⬜ |
 | 5 | Quantization: FP16, INT8, INT4 | ⬜ |

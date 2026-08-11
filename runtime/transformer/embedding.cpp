@@ -6,7 +6,7 @@
 namespace rt::transformer {
 
 void embedding_forward(const Tensor& tok_embedding, const Tensor& pos_embedding,
-                        const std::vector<int32_t>& ids, Tensor& y) {
+                        const std::vector<int32_t>& ids, Tensor& y, uint32_t position_offset) {
     assert(tok_embedding.shape.ndim == 2 && pos_embedding.shape.ndim == 2);
     const uint32_t vocab_size = tok_embedding.shape[0];
     const uint32_t D = tok_embedding.shape[1];
@@ -15,9 +15,11 @@ void embedding_forward(const Tensor& tok_embedding, const Tensor& pos_embedding,
     const uint32_t T = static_cast<uint32_t>(ids.size());
     assert(y.shape[0] == T && y.shape[1] == D);
 
-    if (T > context_length) {
-        throw std::out_of_range("embedding_forward: sequence length " + std::to_string(T) +
-                                 " exceeds context_length " + std::to_string(context_length));
+    if (position_offset + T > context_length) {
+        throw std::out_of_range("embedding_forward: position_offset(" +
+                                 std::to_string(position_offset) + ") + sequence length(" +
+                                 std::to_string(T) + ") exceeds context_length " +
+                                 std::to_string(context_length));
     }
 
     const float* tok = static_cast<const float*>(tok_embedding.data);
@@ -31,7 +33,7 @@ void embedding_forward(const Tensor& tok_embedding, const Tensor& pos_embedding,
                                      " out of range [0, " + std::to_string(vocab_size) + ")");
         }
         const float* tok_row = tok + static_cast<size_t>(id) * D;
-        const float* pos_row = pos + static_cast<size_t>(t) * D;
+        const float* pos_row = pos + static_cast<size_t>(position_offset + t) * D;
         float* out_row = yd + static_cast<size_t>(t) * D;
         for (uint32_t d = 0; d < D; ++d) out_row[d] = tok_row[d] + pos_row[d];
     }

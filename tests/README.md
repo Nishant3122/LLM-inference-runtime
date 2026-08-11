@@ -9,7 +9,7 @@ stress. Phase 0/1 deliver the pattern (`tensor_test.cpp`, `tokenizer_test.cpp`,
 | `tensor_test.cpp` | 1 | ✅ passing — `runtime/core` (Shape/Tensor/dtype) |
 | `tokenizer_test.cpp` | 1 | ✅ passing — `tools/tokenizer` vs. `tests/golden/manifest.json` ids |
 | `model_test.cpp` | 1 | ✅ passing — full forward pass (embedding, every block, final norm, logits) vs. `tests/golden/*.bin`, max abs diff ~1e-6 |
-| `kv_cache_test.cpp` | 2 | ⬜ — cached vs. recomputed logits must match (spec §32 ablation) |
+| `kv_cache_test.cpp` | 2 | ✅ passing — cached (`prefill`+`decode_step`) vs. recomputed (`forward`) logits match with **max abs diff = 0** at every step (spec §32 ablation) |
 | `quantization_test.cpp` | 5 | ⬜ |
 | `runtime_test.cpp` | 6+ | ⬜ — end-to-end batched/adaptive runtime |
 

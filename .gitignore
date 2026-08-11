@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Build
+build/
+cmake-build-*/
+*.o
+*.obj
+*.exe
+*.dll
+*.lib
+*.pdb
+
+# Generated artifacts (reproducible from reference/ scripts)
+models/*.bin
+models/*.pt
+models/vocab.json
+!models/README.md
+
+# Benchmark/profiling output
+benchmarks/results/
+*.log
+*.nsys-rep
+*.ncu-rep
+
+# OS/editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

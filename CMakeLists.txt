@@ -28,6 +28,7 @@ if(BUILD_CUDA)
 endif()
 
 add_subdirectory(runtime)
+add_subdirectory(tools/tokenizer)
 
 if(BUILD_CUDA)
     add_subdirectory(cuda)

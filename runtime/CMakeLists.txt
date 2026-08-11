@@ -1,13 +1,40 @@
-# Only `core/` has real code as of Phase 0. The other subdirectories (model/,
-# transformer/, execution/, cache/, quantization/, scheduler/, sampling/) exist as
-# placeholders — see the README.md in each — and get their own CMake targets as they
-# gain real sources in Phase 1+. Deliberately not pre-declaring empty library targets
-# for them now (Engineering Principle 4: avoid premature abstraction).
-add_library(runtime_core STATIC
+# Phase 1: renamed from `runtime_core` (Phase 0) to `runtime` now that this target
+# covers core + model + transformer + execution + sampling, not just the Tensor
+# abstraction. cache/, quantization/, scheduler/ still have no sources (Phase 2/5/6+)
+# — see the README.md in each.
+add_library(runtime STATIC
     core/tensor.h
     core/shape.h
     core/types.h
     core/version.h
     core/version.cpp
+
+    model/model_config.h
+    model/model.h
+    model/model_loader.h
+    model/model_loader.cpp
+
+    transformer/ops.h
+    transformer/ops.cpp
+    transformer/normalization.h
+    transformer/normalization.cpp
+    transformer/embedding.h
+    transformer/embedding.cpp
+    transformer/attention.h
+    transformer/attention.cpp
+    transformer/mlp.h
+    transformer/mlp.cpp
+    transformer/transformer_block.h
+    transformer/transformer_block.cpp
+
+    execution/cpu_backend.h
+    execution/cpu_backend.cpp
+
+    sampling/greedy.h
+    sampling/greedy.cpp
+    sampling/temperature.h
+    sampling/temperature.cpp
+    sampling/top_k.h
+    sampling/top_k.cpp
 )
-target_include_directories(runtime_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

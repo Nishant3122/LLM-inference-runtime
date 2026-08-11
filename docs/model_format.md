@@ -85,11 +85,13 @@ wk w/b, wv w/b, wo w/b, ln2 w/b, fc1 w/b, fc2 w/b] + 4 for ln_f + lm_head).
 For the Stage 1 config (`L=4`): `2 + 64 + 4 = 70` tensors — confirmed against
 `reference/export.py` output on the trained Stage-1 checkpoint (2026-08-12).
 
-## Companion file: `vocab.json`
+## Companion files: `vocab.json` and `vocab.bin`
 
 Not part of `model.bin` (tokenization is a separate concern from model weights, per
-the runtime's directory split — `tokenizer/` vs `model/`). A plain JSON file next to
-`model.bin`:
+the runtime's directory split — `tools/tokenizer/` vs `runtime/model/`). Two forms,
+both produced by `reference/export.py` (from `reference/tokenizer.py::CharTokenizer`):
+
+**`vocab.json`** — human-readable, Python-side only:
 
 ```json
 {
@@ -97,6 +99,22 @@ the runtime's directory split — `tokenizer/` vs `model/`). A plain JSON file n
   "id_to_char": ["\n", " ", "!", ...]
 }
 ```
+
+**`vocab.bin`** — what the C++ runtime (`tools/tokenizer`) actually loads. Avoids
+needing a JSON parser in C++ for one small fixed-shape file. Little-endian:
+
+| Field | Type | Notes |
+|---|---|---|
+| `magic` | uint32 | `0x54564F43` ("TVOC" ASCII, little-endian) |
+| `version` | uint32 | `1` |
+| `vocab_size` | uint32 | |
+| repeated `vocab_size` times: `utf8_byte_len` | uint32 | byte length of this id's character |
+| ...followed by | `utf8_byte_len` bytes | the character's UTF-8 encoding |
+
+Entries are in id order (`id_to_char[0]`, `id_to_char[1]`, ...), so the loader can
+build both `id -> string` (array-indexed) and `string -> id` (hash map) in one pass.
+Stored as UTF-8 byte strings rather than fixed-width chars so a non-ASCII training
+corpus still works without a format change.
 
 ## Versioning
 

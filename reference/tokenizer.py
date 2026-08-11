@@ -2,11 +2,18 @@
 
 Deliberately trivial: the runtime spec (docs/architecture.md) treats tokenization as
 orthogonal to the model runtime, and char-level vocab keeps Stage 1 free of BPE
-complexity. `tools/tokenizer/` will eventually host a C++ port of just the
-encode/decode table lookup this class does (no training needed at inference time,
-since the vocab is baked into `vocab.json` at export time).
+complexity. `tools/tokenizer/` hosts the C++ port of just the encode/decode table
+lookup this class does (no training needed at inference time, since the vocab is
+baked in at export time).
+
+Two on-disk forms:
+  - `vocab.json` (`save`/`from_json`): human-readable, used by the Python side.
+  - `vocab.bin` (`save_binary`): what the C++ runtime actually loads, since writing a
+    JSON parser in C++ for one small fixed-shape file isn't worth it (Engineering
+    Principle 4). See docs/model_format.md "Companion file: vocab.bin" for the layout.
 """
 import json
+import struct
 from pathlib import Path
 from typing import List
 
@@ -38,6 +45,21 @@ class CharTokenizer:
             "id_to_char": [self.id_to_char[i] for i in range(self.vocab_size)],
         }
         Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def save_binary(self, path: str) -> None:
+        """vocab.bin layout (little-endian), see docs/model_format.md:
+        [magic uint32 "TVOC"][version uint32][vocab_size uint32]
+        then, for id in [0, vocab_size): [utf8_byte_len uint32][utf8 bytes]
+        (char-level, but stored as UTF-8 byte strings so non-ASCII corpora still work).
+        """
+        MAGIC = 0x54564F43  # "TVOC" little-endian
+        VERSION = 1
+        with open(path, "wb") as f:
+            f.write(struct.pack("<III", MAGIC, VERSION, self.vocab_size))
+            for i in range(self.vocab_size):
+                b = self.id_to_char[i].encode("utf-8")
+                f.write(struct.pack("<I", len(b)))
+                f.write(b)
 
     def encode(self, text: str) -> List[int]:
         try:

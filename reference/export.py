@@ -16,6 +16,7 @@ import numpy as np
 import torch
 
 from model import TinyTransformerConfig
+from tokenizer import CharTokenizer
 
 HERE = Path(__file__).parent
 
@@ -137,6 +138,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ckpt", default=str(HERE / ".." / "models" / "tiny_transformer.pt"))
     parser.add_argument("--out", default=str(HERE / ".." / "models" / "model.bin"))
+    parser.add_argument("--vocab-json", default=str(HERE / ".." / "models" / "vocab.json"))
+    parser.add_argument("--vocab-out", default=str(HERE / ".." / "models" / "vocab.bin"))
     args = parser.parse_args()
 
     ckpt_path = Path(args.ckpt)
@@ -149,6 +152,13 @@ def main():
 
     tensors = collect_tensors(state_dict, cfg)
     write_model_bin(Path(args.out), cfg, tensors)
+
+    vocab_json_path = Path(args.vocab_json)
+    if not vocab_json_path.exists():
+        raise FileNotFoundError(f"{vocab_json_path} not found. Run `python train.py` first.")
+    tokenizer = CharTokenizer.from_json(str(vocab_json_path))
+    tokenizer.save_binary(args.vocab_out)
+    print(f"Wrote {args.vocab_out} ({tokenizer.vocab_size} chars, for the C++ runtime)")
 
 
 if __name__ == "__main__":

@@ -1,14 +1,18 @@
-# runtime/model — Phase 1
+# runtime/model — Phase 1 ✅
 
-Not yet implemented. Will contain:
+- `model_config.h` — mirrors `reference/model.py::TinyTransformerConfig`.
+- `model.h` — `Model`: owns the raw weight bytes read from `model.bin` and exposes
+  named `rt::Tensor` views into them (`tok_embedding`, `pos_embedding`, one
+  `transformer::BlockWeights` per layer, `ln_f_*`, `lm_head_*`).
+- `model_loader.h/.cpp` — parses `model.bin` per
+  [`docs/model_format.md`](../../docs/model_format.md) (header + tensor table + data
+  section) into a `Model`.
 
-- `model_loader` — reads `model.bin` per [`docs/model_format.md`](../../docs/model_format.md)
-  (header + tensor table + data section) and produces in-memory `rt::Tensor` views.
-- `weight_manager` — owns the loaded weight buffers (the one place in Phase 1 that
-  actually allocates/frees memory for model weights).
-- `model_config` — mirrors `reference/model.py::TinyTransformerConfig` fields
-  (`vocab_size`, `d_model`, `n_layers`, `n_heads`, `d_ff`, `context_length`), read
-  from the `model.bin` header.
+**Deviation from the original spec (documented per §45, "what can be changed"):**
+there's no separate `weight_manager` — `Model` owns its storage directly. With one
+load path and one owner, splitting them would just be `Model` with extra indirection
+(Engineering Principle 4). Revisit if/when a CUDA-resident weight story needs
+different ownership than the CPU path.
 
-Reference for exact byte layout and tensor names: [`docs/model_format.md`](../../docs/model_format.md),
-and the Python side that must match it, [`reference/export.py`](../../reference/export.py).
+Validated against `tests/golden/` in `tests/model_test.cpp` — see
+`docs/architecture.md` §4 (G1).

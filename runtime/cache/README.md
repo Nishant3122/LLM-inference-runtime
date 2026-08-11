@@ -11,4 +11,7 @@ Not yet implemented. Will contain:
 
 First correctness target: generation with the cache produces byte-identical logits to
 generation that recomputes K/V from scratch every step (the "without caching" path in
-spec §12) — that's the ablation in spec §32 (KV Cache ON/OFF).
+spec §12) — that's the ablation in spec §32 (KV Cache ON/OFF). The "without caching"
+side of that ablation already exists: Phase 1's `runtime/execution/cpu_backend`
+recomputes the full sequence every step (see its README's ad hoc timing, ~2.4s for 50
+tokens on this machine) — that's the baseline number Phase 2 needs to beat.

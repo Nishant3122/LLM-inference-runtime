@@ -2,6 +2,6 @@
 
 namespace rt {
 
-const char* runtime_version() { return "0.0.1-phase0"; }
+const char* runtime_version() { return "0.0.1-phase1"; }
 
 }  // namespace rt

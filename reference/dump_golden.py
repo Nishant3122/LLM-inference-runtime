@@ -10,10 +10,16 @@ norm) for a single short prompt, so a failing comparison in Phase 1 can be bisec
 the specific op (embedding vs. attention vs. MLP vs. norm) instead of only comparing
 final logits.
 
+Each 2D activation is saved twice: as `<name>.npy` (for Python-side inspection) and
+as `<name>.bin` — a minimal raw format `[uint32 rows][uint32 cols][float32 data...]`
+that tests/model_test.cpp reads directly, avoiding an .npy-header or JSON parser in
+C++ for what is purely a test fixture (Engineering Principle 4).
+
 Usage:
     python dump_golden.py
 """
 import json
+import struct
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +38,14 @@ GOLDEN_PROMPTS = [
     "The cat",
     "A small bird finds",
 ]
+
+
+def save_raw_2d(path: Path, arr: np.ndarray) -> None:
+    assert arr.ndim == 2, f"save_raw_2d expects a 2D array, got shape {arr.shape}"
+    rows, cols = arr.shape
+    with open(path, "wb") as f:
+        f.write(struct.pack("<II", rows, cols))
+        f.write(np.ascontiguousarray(arr.astype(np.float32)).tobytes(order="C"))
 
 
 def main():
@@ -74,7 +88,9 @@ def main():
                 np.asarray(ids[0].tolist(), dtype=np.int32).tobytes()
             )
             for key, tensor in activations.items():
-                np.save(case_dir / f"{key}.npy", tensor.squeeze(0).numpy().astype(np.float32))
+                arr2d = tensor.squeeze(0).numpy().astype(np.float32)
+                np.save(case_dir / f"{key}.npy", arr2d)
+                save_raw_2d(case_dir / f"{key}.bin", arr2d)
 
             next_token_id = int(torch.argmax(logits[0, -1]).item())
             manifest["cases"].append({

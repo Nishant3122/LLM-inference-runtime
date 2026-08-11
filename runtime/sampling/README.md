@@ -1,6 +1,7 @@
-# runtime/sampling — Phase 1
+# runtime/sampling — Phase 1 ✅
 
-Not yet implemented. Will contain `greedy`, `temperature`, `top_k` sampling
-(spec §21), deliberately separated from the Transformer execution engine (they operate
-on the final logits tensor only). Mirrors `reference/generate.py`'s three sampling
-modes, which should be treated as the reference behavior to match.
+`greedy`, `temperature`, `top_k` sampling (spec §21), operating on a raw logits
+pointer only — no dependency on the Transformer execution engine, matching
+`reference/generate.py`'s three sampling modes exactly (temperature<=0 -> greedy;
+temperature>0 & top_k<=0 -> temperature; temperature>0 & top_k>0 -> top-k). Used by
+`examples/generate.cpp`'s autoregressive loop.

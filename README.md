@@ -11,13 +11,13 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 
 ## Status
 
-**Phase 0 — Architecture & Reference** (see [Development Phases](docs/architecture.md#development-phases))
+**Phase 1 — CPU Runtime, done** (see [Development Phases](docs/architecture.md#development-phases))
 
 | Phase | Status |
 |---|---|
-| 0 — Architecture & reference model | 🚧 in progress |
-| 1 — CPU runtime | ⬜ not started |
-| 2 — KV cache | ⬜ not started |
+| 0 — Architecture & reference model | ✅ done |
+| 1 — CPU runtime | ✅ done — see `runtime/`, validated by `tests/model_test.cpp` against `tests/golden/` |
+| 2 — KV cache | ⬜ next |
 | 3 — CUDA backend | ⬜ not started |
 | 4 — CUDA optimization | ⬜ not started |
 | 5 — Quantization | ⬜ not started |
@@ -40,28 +40,39 @@ for the reasoning and the planned progression to larger models.
 
 ## Local environment note
 
-CMake 4.4.2 and MSVC Build Tools 2022 are installed and verified — the C++ skeleton
-(`runtime_core`, `tensor_test`, `examples/`) builds and passes `ctest` (see
-`docs/architecture.md` §10). Still missing: **no NVIDIA GPU/driver** on this machine —
-the CUDA backend (Phase 3+) needs a different machine or a cloud GPU instance.
+CMake 4.4.2 and MSVC Build Tools 2022 are installed and verified — the full Phase 1
+C++ runtime builds and passes `ctest` (see `docs/architecture.md` §10). Still missing:
+**no NVIDIA GPU/driver** on this machine — the CUDA backend (Phase 3+) needs a
+different machine or a cloud GPU instance.
 
-```powershell
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config RelWithDebInfo
-ctest --test-dir build -C RelWithDebInfo --output-on-failure
-```
+## Quick start
 
-## Quick start (Phase 0)
+**1. Train the reference model and export it (Python, Phase 0):**
 
 ```bash
 cd reference
 pip install -r requirements.txt
 python data/make_corpus.py          # generate the toy training corpus
-python train.py                     # train the tiny reference model (CPU, seconds)
+python train.py                     # train the tiny reference model (CPU, ~1hr for 1200 steps)
 python generate.py                  # sanity-check text generation
-python export.py                    # export weights -> ../models/model.bin
-python dump_golden.py               # dump golden logits -> ../tests/golden/ for later runtime comparison
+python export.py                    # export -> ../models/model.bin, ../models/vocab.bin
+python dump_golden.py               # dump golden activations -> ../tests/golden/ for the C++ tests
 ```
+
+**2. Build and run the C++ runtime (Phase 1):**
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config RelWithDebInfo
+ctest --test-dir build -C RelWithDebInfo --output-on-failure   # tensor/tokenizer/model tests
+
+.\build\examples\RelWithDebInfo\generate_example.exe models\model.bin models\vocab.bin "The cat" 200 0.8 20
+```
+
+No PyTorch/libtorch involved in that last step (G2, `docs/architecture.md` §4) — pure
+C++ loading `model.bin` and running the forward pass itself. No KV cache yet (Phase 2),
+so generation cost grows roughly quadratically with total sequence length; see
+`runtime/execution/README.md` for a timing baseline.
 
 ## Repository layout
 
@@ -74,7 +85,7 @@ tools/           model_converter, tokenizer, benchmark CLIs
 tests/           unit/integration/numerical tests + tests/golden reference outputs
 benchmarks/      benchmark configs and recorded results
 scripts/         setup/dev scripts
-models/          generated model.bin / vocab.json (gitignored, reproducible from reference/)
+models/          generated model.bin / vocab.bin / vocab.json (gitignored, reproducible from reference/)
 examples/        example programs (generate.cpp, benchmark.cpp)
 ```
 

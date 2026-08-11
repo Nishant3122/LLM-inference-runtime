@@ -6,7 +6,7 @@ of this list fills in as each phase lands:
 
 | File | Phase | Status |
 |---|---|---|
-| `tensor_test.cpp` | 1 | ✅ written, not yet build-verified (no local toolchain, see `docs/architecture.md` §10) |
+| `tensor_test.cpp` | 1 | ✅ written and build-verified (CMake 4.4.2 + MSVC 19.44, `ctest` passes) |
 | `matmul_test.cpp` | 1 | ⬜ |
 | `softmax_test.cpp` | 1 | ⬜ |
 | `attention_test.cpp` | 1 | ⬜ — compare against `tests/golden/*/block_*_output.npy` |

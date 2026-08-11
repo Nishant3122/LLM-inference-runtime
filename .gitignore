@@ -31,3 +31,6 @@ benchmarks/results/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Claude Code harness session state (not project content)
+.claude/

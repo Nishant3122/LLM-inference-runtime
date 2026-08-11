@@ -80,8 +80,10 @@ transposed from PyTorch's default `nn.Linear.weight` shape of `[out, in]`) so th
 C++/CUDA runtime can compute `Y = X @ W + b` directly without a transpose at load time.
 `reference/export.py` performs this transpose during export.
 
-Total tensor count: `2 + L * 14 + 4` (embeddings + per-layer tensors + final norm/head).
-For the Stage 1 config (`L=4`): `2 + 56 + 4 = 62` tensors.
+Total tensor count: `2 + L * 16 + 4` (2 embeddings + 16 tensors/layer [ln1 w/b, wq w/b,
+wk w/b, wv w/b, wo w/b, ln2 w/b, fc1 w/b, fc2 w/b] + 4 for ln_f + lm_head).
+For the Stage 1 config (`L=4`): `2 + 64 + 4 = 70` tensors — confirmed against
+`reference/export.py` output on the trained Stage-1 checkpoint (2026-08-12).
 
 ## Companion file: `vocab.json`
 

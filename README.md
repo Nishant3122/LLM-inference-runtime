@@ -40,11 +40,16 @@ for the reasoning and the planned progression to larger models.
 
 ## Local environment note
 
-This machine currently has **no NVIDIA GPU/driver, no CUDA toolkit, no CMake, and no
-C++ compiler** — only Python + PyTorch(CPU) and Git. Phase 0 (reference model, model
-format, docs) only needs Python. Building the C++ runtime (Phase 1+) needs CMake and a
-C++17/20 compiler; the CUDA backend (Phase 3+) needs an NVIDIA GPU + CUDA Toolkit
-(locally or via a cloud GPU instance).
+CMake 4.4.2 and MSVC Build Tools 2022 are installed and verified — the C++ skeleton
+(`runtime_core`, `tensor_test`, `examples/`) builds and passes `ctest` (see
+`docs/architecture.md` §10). Still missing: **no NVIDIA GPU/driver** on this machine —
+the CUDA backend (Phase 3+) needs a different machine or a cloud GPU instance.
+
+```powershell
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake --build build --config RelWithDebInfo
+ctest --test-dir build -C RelWithDebInfo --output-on-failure
+```
 
 ## Quick start (Phase 0)
 

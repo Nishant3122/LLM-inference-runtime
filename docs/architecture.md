@@ -151,13 +151,22 @@ each later phase can be A/B'd against the previous one.
 | 6 | Batching: static, then dynamic/continuous | ⬜ |
 | 7 | Adaptive runtime: workload analyzer, memory estimator, execution policy | ⬜ |
 
-## 10. Environment constraints (recorded 2026-08-11)
+## 10. Environment constraints
 
-The primary development machine at project start has **no NVIDIA GPU/driver, no CUDA
-Toolkit, no CMake, and no C++ compiler** — only Python + PyTorch(CPU) and Git. This is
-tracked here (not just in conversation) because it affects sequencing: Phase 0 is
-Python-only and fully doable now; Phase 1 needs CMake + a C++17/20 toolchain installed;
-Phase 3+ needs an NVIDIA GPU + CUDA Toolkit, either locally or via a cloud GPU instance.
+The primary development machine had, at project start (2026-08-11), **no NVIDIA
+GPU/driver, no CUDA Toolkit, no CMake, and no C++ compiler** — only Python +
+PyTorch(CPU) and Git.
+
+**Update (2026-08-12):** CMake 4.4.2 and MSVC Build Tools 2022 (17.14, MSVC 19.44,
+Windows SDK 10.0.26100.0) are now installed — see `scripts/setup_windows.md`. The
+Phase 0 C++ skeleton (`runtime_core`, `tensor_test`, both `examples/`) configures and
+builds cleanly with `cmake -S . -B build -G "Visual Studio 17 2022" -A x64` and
+`ctest` passes. MSVC was chosen over MinGW specifically because `nvcc` on Windows
+requires MSVC as its host compiler, which Phase 3 (CUDA) will need.
+
+Still missing: **no NVIDIA GPU/driver** on this machine at all (no `nvidia-smi`).
+Phase 3+ (CUDA backend) needs a different machine or a cloud GPU instance — CUDA
+Toolkit installation alone won't be enough here.
 
 ## 11. Engineering principles (unchanged from original spec)
 

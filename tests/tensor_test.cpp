@@ -6,9 +6,10 @@
 // core-type tests Phase 1 needs; revisit if the test surface grows past what this
 // pattern can hold cleanly.
 //
-// NOT YET BUILD-VERIFIED: this machine has no CMake/C++ compiler installed
-// (docs/architecture.md §10). Compile once a toolchain is available:
-//   cmake -S . -B build && cmake --build build --target tensor_test && ctest --test-dir build -R tensor_test
+// Build-verified 2026-08-12 with CMake 4.4.2 + MSVC 19.44:
+//   cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+//   cmake --build build --config RelWithDebInfo --target tensor_test
+//   ctest --test-dir build -C RelWithDebInfo -R tensor_test
 
 #include <cassert>
 #include <cstdio>

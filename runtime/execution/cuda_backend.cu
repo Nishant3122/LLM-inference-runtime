@@ -31,7 +31,7 @@ void sync_if(profiling::Profiler* profiler) {
 }  // namespace
 
 ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32_t>& ids,
-                            profiling::Profiler* profiler) {
+                            profiling::Profiler* profiler, bool use_fusion) {
     ForwardResult result;
     result.T = static_cast<uint32_t>(ids.size());
     result.D = model.config.d_model;
@@ -62,15 +62,24 @@ ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32
             cuda::transformer::layer_norm(x, layer.ln1_w, layer.ln1_b, normed);
             sync_if(profiler);
         });
-        profiling::time_if(profiler, "attention", [&] {
-            cuda::transformer::causal_self_attention(
-                normed, layer.attn, static_cast<int>(model.config.n_heads), sub_out);
-            sync_if(profiler);
-        });
-        profiling::time_if(profiler, "residual_add", [&] {
-            cuda::ops::add_inplace(x, sub_out);
-            sync_if(profiler);
-        });
+        if (use_fusion) {
+            // Fused: wo's output accumulates directly into x, no separate residual_add.
+            profiling::time_if(profiler, "attention", [&] {
+                cuda::transformer::causal_self_attention_fused(
+                    normed, layer.attn, static_cast<int>(model.config.n_heads), x);
+                sync_if(profiler);
+            });
+        } else {
+            profiling::time_if(profiler, "attention", [&] {
+                cuda::transformer::causal_self_attention(
+                    normed, layer.attn, static_cast<int>(model.config.n_heads), sub_out);
+                sync_if(profiler);
+            });
+            profiling::time_if(profiler, "residual_add", [&] {
+                cuda::ops::add_inplace(x, sub_out);
+                sync_if(profiler);
+            });
+        }
 
         // x = x + MLP(LN2(x))
         profiling::time_if(profiler, "layer_norm", [&] {
@@ -80,16 +89,28 @@ ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32
         const uint32_t d_ff = layer.mlp.fc1_w.shape[1];
         cuda::DeviceBuffer hidden_buf(static_cast<size_t>(result.T) * d_ff * sizeof(float));
         rt::Tensor hidden = make_tensor(hidden_buf, result.T, d_ff);
-        profiling::time_if(profiler, "mlp", [&] {
-            cuda::ops::linear(normed, layer.mlp.fc1_w, layer.mlp.fc1_b, hidden);
-            cuda::ops::gelu_inplace(hidden);
-            cuda::ops::linear(hidden, layer.mlp.fc2_w, layer.mlp.fc2_b, sub_out);
-            sync_if(profiler);
-        });
-        profiling::time_if(profiler, "residual_add", [&] {
-            cuda::ops::add_inplace(x, sub_out);
-            sync_if(profiler);
-        });
+        if (use_fusion) {
+            // Fused: fc1+bias+GELU in one launch, fc2's output accumulates directly
+            // into x (same in-place-accumulation pattern as the attention path above).
+            profiling::time_if(profiler, "mlp", [&] {
+                cuda::ops::linear_fused(normed, layer.mlp.fc1_w, layer.mlp.fc1_b, hidden,
+                                         /*apply_gelu=*/true, /*residual=*/nullptr);
+                cuda::ops::linear_fused(hidden, layer.mlp.fc2_w, layer.mlp.fc2_b, x,
+                                         /*apply_gelu=*/false, /*residual=*/&x);
+                sync_if(profiler);
+            });
+        } else {
+            profiling::time_if(profiler, "mlp", [&] {
+                cuda::ops::linear(normed, layer.mlp.fc1_w, layer.mlp.fc1_b, hidden);
+                cuda::ops::gelu_inplace(hidden);
+                cuda::ops::linear(hidden, layer.mlp.fc2_w, layer.mlp.fc2_b, sub_out);
+                sync_if(profiler);
+            });
+            profiling::time_if(profiler, "residual_add", [&] {
+                cuda::ops::add_inplace(x, sub_out);
+                sync_if(profiler);
+            });
+        }
 
         result.block_outputs[i].resize(static_cast<size_t>(result.T) * result.D);
         x_buf.download(result.block_outputs[i].data(), td_bytes);

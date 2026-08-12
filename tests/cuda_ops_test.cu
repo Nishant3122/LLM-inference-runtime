@@ -228,6 +228,117 @@ void test_attention(float atol) {
     CHECK(diff <= atol);
 }
 
+// Phase 4: linear_fused's two epilogues (GELU, residual-add) against the equivalent
+// two-step CPU computation — not a new "reference" op, just checking the fusion is
+// mathematically identical to doing the steps separately.
+void test_linear_fused(float atol) {
+    const uint32_t T = 6, D = 10;
+    auto x_h = random_vec(T * D);
+    auto w_h = random_vec(D * D);
+    auto b_h = random_vec(D);
+    auto residual_h = random_vec(T * D);
+
+    // GELU epilogue: expect gelu(linear(x, W, b))
+    {
+        rt::Tensor x_cpu(x_h.data(), rt::Shape{T, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::Tensor w_cpu(w_h.data(), rt::Shape{D, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::Tensor b_cpu(b_h.data(), rt::Shape{D}, rt::DataType::FP32, rt::Device::CPU);
+        std::vector<float> y_cpu_h(T * D);
+        rt::Tensor y_cpu(y_cpu_h.data(), rt::Shape{T, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::ops::linear(x_cpu, w_cpu, b_cpu, y_cpu);
+        for (float& v : y_cpu_h) v = rt::ops::gelu(v);
+
+        rt::cuda::DeviceBuffer x_buf, w_buf, b_buf, y_buf(static_cast<size_t>(T) * D * sizeof(float));
+        rt::Tensor x_gpu = to_device(x_h, rt::Shape{T, D}, x_buf);
+        rt::Tensor w_gpu = to_device(w_h, rt::Shape{D, D}, w_buf);
+        rt::Tensor b_gpu = to_device(b_h, rt::Shape{D}, b_buf);
+        rt::Tensor y_gpu(y_buf.data(), rt::Shape{T, D}, rt::DataType::FP32, rt::Device::CUDA);
+        rt::cuda::ops::linear_fused(x_gpu, w_gpu, b_gpu, y_gpu, /*apply_gelu=*/true, nullptr);
+        auto y_gpu_h = to_host(y_buf, T * D);
+
+        float diff = max_abs_diff(y_cpu_h, y_gpu_h);
+        std::printf("linear_fused(gelu):     max_abs_diff=%.6g %s\n", diff,
+                    diff <= atol ? "OK" : "FAIL");
+        CHECK(diff <= atol);
+    }
+
+    // Residual epilogue: expect linear(x, W, b) + residual
+    {
+        rt::Tensor x_cpu(x_h.data(), rt::Shape{T, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::Tensor w_cpu(w_h.data(), rt::Shape{D, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::Tensor b_cpu(b_h.data(), rt::Shape{D}, rt::DataType::FP32, rt::Device::CPU);
+        std::vector<float> y_cpu_h(T * D);
+        rt::Tensor y_cpu(y_cpu_h.data(), rt::Shape{T, D}, rt::DataType::FP32, rt::Device::CPU);
+        rt::ops::linear(x_cpu, w_cpu, b_cpu, y_cpu);
+        for (size_t i = 0; i < y_cpu_h.size(); ++i) y_cpu_h[i] += residual_h[i];
+
+        rt::cuda::DeviceBuffer x_buf, w_buf, b_buf, res_buf;
+        rt::Tensor x_gpu = to_device(x_h, rt::Shape{T, D}, x_buf);
+        rt::Tensor w_gpu = to_device(w_h, rt::Shape{D, D}, w_buf);
+        rt::Tensor b_gpu = to_device(b_h, rt::Shape{D}, b_buf);
+        rt::Tensor residual_gpu = to_device(residual_h, rt::Shape{T, D}, res_buf);
+        // in-place: y aliases residual's buffer, matching how cuda_backend.cu uses it
+        rt::cuda::ops::linear_fused(x_gpu, w_gpu, b_gpu, residual_gpu, /*apply_gelu=*/false,
+                                     &residual_gpu);
+        auto y_gpu_h = to_host(res_buf, T * D);
+
+        float diff = max_abs_diff(y_cpu_h, y_gpu_h);
+        std::printf("linear_fused(residual): max_abs_diff=%.6g %s\n", diff,
+                    diff <= atol ? "OK" : "FAIL");
+        CHECK(diff <= atol);
+    }
+}
+
+// Phase 4: causal_self_attention_fused vs. the naive path (causal_self_attention +
+// a manual residual add) on the same random weights/input — proves the fusion (fused
+// QKV launch, wo's output accumulating directly into the residual) doesn't change
+// the result, only the launch count.
+void test_attention_fused(float atol) {
+    const uint32_t T = 9, D = 16, H = 4;
+    auto x_norm_h = random_vec(T * D);
+    auto x_residual_h = random_vec(T * D);  // the "already-there" residual stream
+    auto wq_w_h = random_vec(D * D), wq_b_h = random_vec(D);
+    auto wk_w_h = random_vec(D * D), wk_b_h = random_vec(D);
+    auto wv_w_h = random_vec(D * D), wv_b_h = random_vec(D);
+    auto wo_w_h = random_vec(D * D), wo_b_h = random_vec(D);
+
+    rt::cuda::DeviceBuffer x_norm_buf, wq_w_buf, wq_b_buf, wk_w_buf, wk_b_buf, wv_w_buf, wv_b_buf,
+        wo_w_buf, wo_b_buf, naive_out_buf(static_cast<size_t>(T) * D * sizeof(float));
+    rt::transformer::AttentionWeights w_gpu;
+    rt::Tensor x_norm_gpu = to_device(x_norm_h, rt::Shape{T, D}, x_norm_buf);
+    w_gpu.wq_w = to_device(wq_w_h, rt::Shape{D, D}, wq_w_buf);
+    w_gpu.wq_b = to_device(wq_b_h, rt::Shape{D}, wq_b_buf);
+    w_gpu.wk_w = to_device(wk_w_h, rt::Shape{D, D}, wk_w_buf);
+    w_gpu.wk_b = to_device(wk_b_h, rt::Shape{D}, wk_b_buf);
+    w_gpu.wv_w = to_device(wv_w_h, rt::Shape{D, D}, wv_w_buf);
+    w_gpu.wv_b = to_device(wv_b_h, rt::Shape{D}, wv_b_buf);
+    w_gpu.wo_w = to_device(wo_w_h, rt::Shape{D, D}, wo_w_buf);
+    w_gpu.wo_b = to_device(wo_b_h, rt::Shape{D}, wo_b_buf);
+
+    // naive: attn_out = causal_self_attention(x_norm); result = x_residual + attn_out
+    rt::Tensor naive_out(naive_out_buf.data(), rt::Shape{T, D}, rt::DataType::FP32,
+                          rt::Device::CUDA);
+    rt::cuda::transformer::causal_self_attention(x_norm_gpu, w_gpu, static_cast<int>(H),
+                                                  naive_out);
+    std::vector<float> naive_attn_out_h = to_host(naive_out_buf, T * D);
+    std::vector<float> naive_result_h(T * D);
+    for (size_t i = 0; i < naive_result_h.size(); ++i) {
+        naive_result_h[i] = x_residual_h[i] + naive_attn_out_h[i];
+    }
+
+    // fused: x_inout starts as x_residual, attention adds directly into it
+    rt::cuda::DeviceBuffer x_inout_buf;
+    rt::Tensor x_inout_gpu = to_device(x_residual_h, rt::Shape{T, D}, x_inout_buf);
+    rt::cuda::transformer::causal_self_attention_fused(x_norm_gpu, w_gpu, static_cast<int>(H),
+                                                         x_inout_gpu);
+    auto fused_result_h = to_host(x_inout_buf, T * D);
+
+    float diff = max_abs_diff(naive_result_h, fused_result_h);
+    std::printf("attention_fused:         max_abs_diff=%.6g %s\n", diff,
+                diff <= atol ? "OK" : "FAIL");
+    CHECK(diff <= atol);
+}
+
 void test_full_model_if_available(const char* model_path, float atol) {
     rt::model::Model model;
     try {
@@ -247,6 +358,18 @@ void test_full_model_if_available(const char* model_path, float atol) {
     std::printf("full model forward (logits): max_abs_diff=%.6g %s\n", diff,
                 diff <= atol ? "OK" : "FAIL");
     CHECK(diff <= atol);
+
+    // Phase 4: the fused path (use_fusion=true) must produce the same logits as the
+    // naive baseline (use_fusion=false, what was just checked above against CPU) —
+    // this is the ablation Engineering Principle 2 asks for: same result, fewer
+    // launches, and the "fewer launches" part is what examples/benchmark_cuda.cu
+    // measures.
+    rt::execution::ForwardResult gpu_fused_result =
+        rt::execution::forward_cuda(gpu_model, ids, /*profiler=*/nullptr, /*use_fusion=*/true);
+    float fused_diff = max_abs_diff(gpu_result.logits, gpu_fused_result.logits);
+    std::printf("full model forward (fused vs naive CUDA): max_abs_diff=%.6g %s\n", fused_diff,
+                fused_diff <= atol ? "OK" : "FAIL");
+    CHECK(fused_diff <= atol);
 }
 
 }  // namespace
@@ -259,6 +382,8 @@ int main(int argc, char** argv) {
     test_gelu(atol);
     test_embedding(atol);
     test_attention(atol);
+    test_linear_fused(atol);
+    test_attention_fused(atol);
 
     const char* model_path = argc > 1 ? argv[1] : "models/model.bin";
     test_full_model_if_available(model_path, atol);

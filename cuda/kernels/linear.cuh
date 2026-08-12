@@ -16,4 +16,23 @@ namespace rt::cuda::ops {
 // CPU version.
 void linear(const rt::Tensor& x, const rt::Tensor& W, const rt::Tensor& b, rt::Tensor& y);
 
+// Phase 4: fused linear with an optional epilogue, so a caller that needs
+// linear -> GELU or linear -> residual-add doesn't pay for two extra kernel
+// launches (and, for the residual case, an extra global-memory round trip) on top
+// of this one. Added after profiling (cuda/README.md "Phase 4") showed launch count
+// — not per-kernel compute — dominates at this model's scale: `attention` was 7
+// launches per call, `mlp` was 3 + a separate residual add.
+//
+//   val = dot(x_row, W_col) + bias[col]
+//   if (apply_gelu) val = gelu(val)
+//   if (residual != nullptr) val += residual[same index]
+//   y[idx] = val
+//
+// `y` and `residual` may point to the *same* buffer (in-place accumulation is safe:
+// each thread only ever reads/writes its own output index, no cross-thread
+// dependency) — this is exactly how the fused residual-add is used, see
+// causal_self_attention_fused and cuda_backend.cu's fused MLP path.
+void linear_fused(const rt::Tensor& x, const rt::Tensor& W, const rt::Tensor& b, rt::Tensor& y,
+                   bool apply_gelu, const rt::Tensor* residual = nullptr);
+
 }  // namespace rt::cuda::ops

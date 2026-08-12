@@ -20,7 +20,15 @@ namespace rt::execution {
 // `profiler`, if non-null (Phase 4), times the same coarse categories forward()
 // does — see runtime/profiling/README.md. Each timed lambda ends with a device sync
 // so this measures actual kernel execution, not just async launch overhead.
+//
+// `use_fusion` (Phase 4, default false): when true, uses the fused kernel variants
+// (causal_self_attention_fused, linear_fused for MLP) that real profiling showed cut
+// launch count where it mattered — see cuda/README.md "Phase 4". Default false keeps
+// the exact Phase 3 baseline available for the A/B comparison Engineering Principle 2
+// requires ("every optimization needs a baseline"); both paths compute the same
+// values (verified in tests/cuda_ops_test.cu), just with fewer kernel launches when
+// true.
 ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32_t>& ids,
-                            profiling::Profiler* profiler = nullptr);
+                            profiling::Profiler* profiler = nullptr, bool use_fusion = false);
 
 }  // namespace rt::execution

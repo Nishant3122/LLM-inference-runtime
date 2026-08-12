@@ -24,4 +24,8 @@ add_library(cuda_kernels STATIC
     kernels/attention.cu
 )
 target_include_directories(cuda_kernels PUBLIC ${CMAKE_SOURCE_DIR})
-set_target_properties(cuda_kernels PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+# Deliberately NOT setting CUDA_SEPARABLE_COMPILATION (relocatable device code):
+# no kernel here calls a __device__ function defined in another .cu file, so RDC
+# buys nothing and just adds a device-link step every consumer needs to get right.
+# (Turning it on caused "undefined reference to __cudaRegisterLinkedBinary_..." at
+# link time for every target consuming this static library — removing it fixed it.)

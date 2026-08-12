@@ -16,3 +16,9 @@ add_test(NAME model_test COMMAND model_test ${CMAKE_SOURCE_DIR}/models/model.bin
 add_executable(kv_cache_test kv_cache_test.cpp)
 target_link_libraries(kv_cache_test PRIVATE runtime)
 add_test(NAME kv_cache_test COMMAND kv_cache_test ${CMAKE_SOURCE_DIR}/models/model.bin)
+
+if(BUILD_CUDA)
+    add_executable(cuda_ops_test cuda_ops_test.cu)
+    target_link_libraries(cuda_ops_test PRIVATE runtime cuda_kernels)
+    add_test(NAME cuda_ops_test COMMAND cuda_ops_test ${CMAKE_SOURCE_DIR}/models/model.bin)
+endif()

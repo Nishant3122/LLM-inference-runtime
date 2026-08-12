@@ -25,14 +25,22 @@ if(BUILD_CUDA)
     enable_language(CUDA)
     set(CMAKE_CUDA_STANDARD 17)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    # 75 = Turing (T4 — the free-tier GPU this was developed/verified against on
+    # Colab). Override with -DCMAKE_CUDA_ARCHITECTURES=... for a different GPU
+    # (e.g. 86 for Ampere consumer cards, 80 for A100).
+    if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+        set(CMAKE_CUDA_ARCHITECTURES 75)
+    endif()
 endif()
 
-add_subdirectory(runtime)
-add_subdirectory(tools/tokenizer)
-
+# cuda/ must configure before runtime/: runtime conditionally links against the
+# cuda_kernels target (defined in cuda/CMakeLists.txt) when BUILD_CUDA=ON, and CMake
+# needs that target to already exist at the point runtime/CMakeLists.txt references it.
 if(BUILD_CUDA)
     add_subdirectory(cuda)
 endif()
+add_subdirectory(runtime)
+add_subdirectory(tools/tokenizer)
 
 if(BUILD_TESTS)
     enable_testing()

@@ -1,6 +1,27 @@
-# Placeholder so `cmake -DBUILD_CUDA=ON` configures cleanly before any real kernels
-# exist (Phase 3). Once cuda/kernels has real .cu files, this becomes a target (e.g.
-# `add_library(cuda_kernels STATIC kernels/matmul.cu ...)`) that runtime/execution's
-# cuda_backend links against. Kept genuinely empty rather than a stub library with no
-# sources — an empty add_library() is a CMake error, and there's nothing real to build
-# yet (Engineering Principle 4: avoid premature abstraction).
+# Phase 3: naive CUDA kernels + device memory + model upload. Every kernel here
+# mirrors a runtime/transformer or runtime/execution CPU op exactly (see each .cuh's
+# header comment) — no shared-memory tiling, no fusion, no KV cache yet. Optimize only
+# after Phase 4 profiling says a specific kernel is the bottleneck (Engineering
+# Principle 1). Only configured when the top-level CMakeLists.txt has BUILD_CUDA=ON.
+add_library(cuda_kernels STATIC
+    utils/cuda_check.h
+
+    memory/device_buffer.h
+    memory/cuda_model.h
+    memory/model_upload.cu
+
+    kernels/linear.cuh
+    kernels/linear.cu
+    kernels/softmax.cuh
+    kernels/softmax.cu
+    kernels/layer_norm.cuh
+    kernels/layer_norm.cu
+    kernels/elementwise.cuh
+    kernels/elementwise.cu
+    kernels/embedding.cuh
+    kernels/embedding.cu
+    kernels/attention.cuh
+    kernels/attention.cu
+)
+target_include_directories(cuda_kernels PUBLIC ${CMAKE_SOURCE_DIR})
+set_target_properties(cuda_kernels PROPERTIES CUDA_SEPARABLE_COMPILATION ON)

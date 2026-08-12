@@ -1,6 +1,7 @@
 # Phase 1: renamed from `runtime_core` (Phase 0) to `runtime` now that this target
 # covers core + model + transformer + execution + sampling, not just the Tensor
-# abstraction. Phase 2 adds cache/. quantization/, scheduler/ still have no sources
+# abstraction. Phase 2 adds cache/. Phase 3 conditionally adds execution/cuda_backend
+# (below, when BUILD_CUDA=ON). quantization/, scheduler/ still have no sources
 # (Phase 5/6+) — see the README.md in each.
 add_library(runtime STATIC
     core/tensor.h
@@ -43,3 +44,8 @@ add_library(runtime STATIC
     sampling/top_k.cpp
 )
 target_include_directories(runtime PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+
+if(BUILD_CUDA)
+    target_sources(runtime PRIVATE execution/cuda_backend.h execution/cuda_backend.cu)
+    target_link_libraries(runtime PUBLIC cuda_kernels)
+endif()

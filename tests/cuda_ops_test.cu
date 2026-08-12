@@ -27,6 +27,7 @@
 #include "../runtime/execution/cuda_backend.h"
 #include "../runtime/model/model_loader.h"
 #include "../runtime/transformer/attention.h"
+#include "../runtime/transformer/embedding.h"
 #include "../runtime/transformer/normalization.h"
 #include "../runtime/transformer/ops.h"
 

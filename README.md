@@ -11,7 +11,7 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 
 ## Status
 
-**Phase 3 — CUDA Backend (naive), done** (see [Development Phases](docs/architecture.md#development-phases))
+**Phase 4 — CUDA Optimization (profiled + fused), done** (see [Development Phases](docs/architecture.md#development-phases))
 
 | Phase | Status |
 |---|---|
@@ -19,8 +19,8 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 | 1 — CPU runtime | ✅ done — see `runtime/`, validated by `tests/model_test.cpp` against `tests/golden/` |
 | 2 — KV cache | ✅ done — see `runtime/cache/`; cached vs. recomputed logits match exactly (max abs diff = 0); **24.6x**–**72.3x** measured speedup, see `runtime/cache/README.md` |
 | 3 — CUDA backend | ✅ done — see `cuda/`; every kernel + the full forward pass verified against CPU on a real Tesla T4 (max abs diff ~1e-6), see `cuda/README.md`. No CUDA-side KV cache yet |
-| 4 — CUDA optimization | ⬜ next |
-| 5 — Quantization | ⬜ not started |
+| 4 — CUDA optimization | ✅ done — profiling showed CUDA's bottleneck was kernel-launch overhead (not compute), so fused kernels (`cuda::ops::linear_fused`, `causal_self_attention_fused`) replaced shared-memory tiling as the fix; **1.03x**–**1.33x** measured speedup, exact correctness (diff=0), see `cuda/README.md` "Phase 4" |
+| 5 — Quantization | ⬜ next |
 | 6 — Batching | ⬜ not started |
 | 7 — Adaptive runtime | ⬜ not started |
 

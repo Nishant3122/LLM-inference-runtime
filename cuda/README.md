@@ -1,4 +1,4 @@
-# cuda/ — Phase 3 ✅ (naive)
+# cuda/ — Phase 3 ✅ (naive) / Phase 4 ✅ (profiled + fused)
 
 Built and verified 2026-08-13 on a real NVIDIA Tesla T4 (Google Colab free tier, CUDA
 Toolkit 12.8, driver 580.82.07) — this machine has no GPU (`docs/architecture.md`
@@ -40,15 +40,75 @@ from different summation order, not a correctness gap. `forward_cuda()`
 unchanged, so it's diffed with the exact same comparison code `tests/model_test.cpp`
 uses for the CPU path.
 
+## Phase 4: profile first, then fuse
+
+`examples/benchmark.cpp` (CPU) and `examples/benchmark_cuda.cu` (CUDA) profile
+`forward()`/`forward_cuda()` across `T={8,32,128,256}` using `runtime/profiling`
+(Engineering Principle 1: profile before optimizing). The two backends showed
+completely different bottlenecks for this tiny model:
+
+| | CPU | CUDA |
+|---|---|---|
+| Dominant op | `mlp` (~60-67%) | `attention` (38-56%) + `layer_norm` (30-38%), **combined** |
+| `mlp` share | 60-67% | only 12-17% |
+
+CPU is a straightforward compute-bound profile (MLP does the most FLOPs, takes the
+most time). CUDA is the opposite signature: `causal_self_attention` was **7 separate
+kernel launches per call** (wq/wk/wv/scores/softmax/weighted-sum/wo), and
+`layer_norm` gets called 9x per forward pass on tiny buffers — classic
+launch-overhead dominance, not compute cost. (GPU still crushed CPU overall: ~54x
+faster at T=256, only ~5x at T=8, since overhead eats a bigger fraction of tiny-T runs.)
+
+This pointed at **kernel fusion** (fewer launches), not shared-memory tiling (which
+helps compute-bound kernels — profiling showed this model isn't compute-bound on GPU
+at this scale). Implemented, with the naive baseline kept fully intact for A/B
+comparison (Engineering Principle 2):
+
+- `cuda::ops::linear_fused` — linear + optional GELU epilogue + optional in-place
+  residual-add epilogue, one kernel launch instead of up to three.
+- `cuda::transformer::causal_self_attention_fused` — Q/K/V in one launch
+  (`qkv_fused_kernel`) instead of three, and `wo`'s output accumulates directly into
+  the residual stream instead of a separate `add_inplace` call. **7 launches → 5.**
+- Fused MLP path: fc1+bias+GELU in one launch, fc2+residual in one launch.
+  **4 launches (fc1, gelu, fc2, add) → 2.**
+- `forward_cuda(..., use_fusion=true)` — opt-in flag, default `false` keeps the
+  Phase 3 baseline unchanged.
+
+**Correctness**: `attention_fused` vs. naive+manual-add matches **exactly** (diff=0);
+full-model fused vs. naive matches **exactly** (diff=0) — fusion changed launch
+count, not any computed value (`tests/cuda_ops_test.cu`).
+
+**Performance** (unprofiled wall-clock — profiling itself forces a sync per timed
+section, which distorts absolute numbers; wall-clock is what actually answers
+whether fusion helped):
+
+| T | naive | fused | speedup |
+|---|---|---|---|
+| 8 | 9.125ms | 7.898ms | 1.16x |
+| 32 | 12.598ms | 9.460ms | **1.33x** |
+| 128 | 21.575ms | 18.175ms | 1.19x |
+| 256 | 33.897ms | 32.968ms | 1.03x |
+
+Modest, not dramatic — and that's an honest, predictable result, not a shortfall:
+speedup peaks at T=32 and nearly vanishes by T=256, exactly where the model predicts
+it should. At T=256, attention's `O(T^2)` compute has grown large enough to genuinely
+dominate over launch overhead, so removing 2 launches matters proportionally less.
+Per Engineering Principle 2: "this optimization improves latency by 1.03x-1.33x
+across T=8-256, largest at T=32" — not "fusion made it faster," full stop.
+
 ## What isn't here yet
 
-- **No CUDA-side KV cache.** `forward_cuda()` is the Phase 3 baseline: full
-  `O(T^2)` recompute every call, the CUDA equivalent of Phase 1's `cpu_backend::forward()`
-  before Phase 2 added caching. Porting `runtime/cache` to CUDA (device-resident
-  `LayerKVCache`, cached attention kernel) is natural follow-up work, not done in this
-  pass — scoped out to keep Phase 3 focused on "naive CUDA is numerically correct"
-  before adding more surface area.
-- **No batching, no quantization, no kernel fusion.** Phases 5/6/4 respectively.
+- **No CUDA-side KV cache.** `forward_cuda()` still does full `O(T^2)` recompute
+  every call — the CUDA equivalent of Phase 1's `cpu_backend::forward()` before
+  Phase 2 added caching. Porting `runtime/cache` to CUDA (device-resident
+  `LayerKVCache`, cached attention kernel) is natural follow-up work, not done in
+  this pass. Given the KV-cache speedup on CPU was 24-72x (`runtime/cache/README.md`)
+  vs. fusion's 1.03-1.33x here, this is very likely a much bigger win than any further
+  kernel-level optimization — a good candidate for whatever comes after Phase 4.
+- **No batching, no quantization.** Phases 5/6 respectively.
+- **No shared-memory tiling.** Deliberately not attempted — profiling showed this
+  model isn't compute-bound on GPU at this scale, so tiling wouldn't be addressing
+  the actual bottleneck (Engineering Principle 1).
 - **`CMAKE_CUDA_ARCHITECTURES` defaults to 75** (Turing/T4). Override with
   `-DCMAKE_CUDA_ARCHITECTURES=...` for a different GPU (e.g. 86 for Ampere consumer
   cards, 80 for A100) — untested on anything but a T4 so far.

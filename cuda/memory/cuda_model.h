@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "../../runtime/model/model.h"
 #include "../../runtime/model/model_config.h"
 #include "../../runtime/transformer/transformer_block.h"
 #include "device_buffer.h"

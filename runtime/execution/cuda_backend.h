@@ -16,6 +16,11 @@ namespace rt::execution {
 // Mirrors forward()'s no-cache behavior exactly (Phase 3 baseline, no CUDA-side KV
 // cache yet — see cuda/README.md). ids.size() must not exceed
 // model.config.context_length.
-ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32_t>& ids);
+//
+// `profiler`, if non-null (Phase 4), times the same coarse categories forward()
+// does — see runtime/profiling/README.md. Each timed lambda ends with a device sync
+// so this measures actual kernel execution, not just async launch overhead.
+ForwardResult forward_cuda(const cuda::CudaModel& model, const std::vector<int32_t>& ids,
+                            profiling::Profiler* profiler = nullptr);
 
 }  // namespace rt::execution

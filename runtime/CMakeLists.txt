@@ -15,6 +15,9 @@ add_library(runtime STATIC
     cache/cache_manager.h
     cache/cache_manager.cpp
 
+    profiling/profiler.h
+    profiling/profiler.cpp
+
     model/model_config.h
     model/model.h
     model/model_loader.h

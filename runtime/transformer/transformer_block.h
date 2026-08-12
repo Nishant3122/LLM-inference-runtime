@@ -4,6 +4,7 @@
 #pragma once
 
 #include "../core/tensor.h"
+#include "../profiling/profiler.h"
 #include "attention.h"
 #include "mlp.h"
 
@@ -19,8 +20,11 @@ struct BlockWeights {
 // x: [T, D], updated in place (residual adds applied directly to x's buffer).
 // If kv_out != nullptr, this layer's K/V for all T positions are appended to it
 // (Phase 2 prefill — see causal_self_attention's kv_out parameter).
+// If profiler != nullptr (Phase 4), times each of the 6 sub-steps under
+// "layer_norm"/"attention"/"residual_add"/"mlp" — see runtime/profiling/README.md.
 void transformer_block_forward(Tensor& x, const BlockWeights& w, int n_heads,
-                                cache::LayerKVCache* kv_out = nullptr);
+                                cache::LayerKVCache* kv_out = nullptr,
+                                profiling::Profiler* profiler = nullptr);
 
 // Phase 2 decode step: x is exactly one token's activations ([1, D]), updated in
 // place. Uses (and grows) this layer's persistent KV cache instead of recomputing

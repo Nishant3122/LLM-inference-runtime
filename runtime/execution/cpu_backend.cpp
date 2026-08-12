@@ -11,9 +11,10 @@ namespace {
 
 // Shared by forward() and prefill(): identical computation either way (kv == nullptr
 // for forward(), non-null for prefill()) — see causal_self_attention's kv_out
-// parameter for why this doesn't change any result.
+// parameter for why this doesn't change any result. `profiler` (Phase 4) is only
+// ever passed by forward()'s public overload — prefill() isn't profiled in this pass.
 ForwardResult forward_impl(const model::Model& model, const std::vector<int32_t>& ids,
-                            cache::KVCache* kv) {
+                            cache::KVCache* kv, profiling::Profiler* profiler) {
     ForwardResult result;
     result.T = static_cast<uint32_t>(ids.size());
     result.D = model.config.d_model;
@@ -22,7 +23,9 @@ ForwardResult forward_impl(const model::Model& model, const std::vector<int32_t>
     result.embedding_output.resize(static_cast<size_t>(result.T) * result.D);
     Tensor emb_t(result.embedding_output.data(), Shape{result.T, result.D}, DataType::FP32,
                  Device::CPU);
-    transformer::embedding_forward(model.tok_embedding, model.pos_embedding, ids, emb_t);
+    profiling::time_if(profiler, "embedding", [&] {
+        transformer::embedding_forward(model.tok_embedding, model.pos_embedding, ids, emb_t);
+    });
 
     std::vector<float> x = result.embedding_output;
     Tensor x_t(x.data(), Shape{result.T, result.D}, DataType::FP32, Device::CPU);
@@ -31,31 +34,37 @@ ForwardResult forward_impl(const model::Model& model, const std::vector<int32_t>
     for (size_t i = 0; i < model.layers.size(); ++i) {
         cache::LayerKVCache* layer_kv = kv != nullptr ? &kv->layer(static_cast<uint32_t>(i)) : nullptr;
         transformer::transformer_block_forward(x_t, model.layers[i],
-                                                 static_cast<int>(model.config.n_heads), layer_kv);
+                                                 static_cast<int>(model.config.n_heads), layer_kv,
+                                                 profiler);
         result.block_outputs[i] = x;
     }
 
     result.final_norm_output.resize(static_cast<size_t>(result.T) * result.D);
     Tensor final_norm_t(result.final_norm_output.data(), Shape{result.T, result.D}, DataType::FP32,
                          Device::CPU);
-    transformer::layer_norm(x_t, model.ln_f_w, model.ln_f_b, final_norm_t);
+    profiling::time_if(profiler, "layer_norm", [&] {
+        transformer::layer_norm(x_t, model.ln_f_w, model.ln_f_b, final_norm_t);
+    });
 
     result.logits.resize(static_cast<size_t>(result.T) * result.V);
     Tensor logits_t(result.logits.data(), Shape{result.T, result.V}, DataType::FP32, Device::CPU);
-    ops::linear(final_norm_t, model.lm_head_w, model.lm_head_b, logits_t);
+    profiling::time_if(profiler, "lm_head", [&] {
+        ops::linear(final_norm_t, model.lm_head_w, model.lm_head_b, logits_t);
+    });
 
     return result;
 }
 
 }  // namespace
 
-ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids) {
-    return forward_impl(model, ids, nullptr);
+ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids,
+                       profiling::Profiler* profiler) {
+    return forward_impl(model, ids, nullptr, profiler);
 }
 
 ForwardResult prefill(const model::Model& model, const std::vector<int32_t>& ids,
                        cache::KVCache& kv) {
-    return forward_impl(model, ids, &kv);
+    return forward_impl(model, ids, &kv, nullptr);
 }
 
 std::vector<float> decode_step(const model::Model& model, int32_t token_id, uint32_t position,

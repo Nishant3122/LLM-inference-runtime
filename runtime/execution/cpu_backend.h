@@ -12,6 +12,7 @@
 
 #include "../cache/kv_cache.h"
 #include "../model/model.h"
+#include "../profiling/profiler.h"
 
 namespace rt::execution {
 
@@ -26,7 +27,12 @@ struct ForwardResult {
 // ids.size() must not exceed model.config.context_length (throws std::out_of_range
 // otherwise, via runtime/transformer/embedding.cpp). Phase 1 baseline: no cache, full
 // recompute every call — see runtime/execution/README.md for measured cost.
-ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids);
+//
+// `profiler`, if non-null (Phase 4), times the coarse op categories described in
+// runtime/profiling/README.md. Default nullptr: zero overhead, this is what
+// prefill()/decode_step() and every production call site use.
+ForwardResult forward(const model::Model& model, const std::vector<int32_t>& ids,
+                       profiling::Profiler* profiler = nullptr);
 
 // Phase 2: same computation as forward(), but also seeds `kv` with every layer's K/V
 // for `ids` (typically the prompt, starting a fresh sequence at position 0). Use this

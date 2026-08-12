@@ -145,7 +145,7 @@ each later phase can be A/B'd against the previous one.
 | 0 | Architecture, model format, reference model, benchmark harness skeleton, correctness-test skeleton | ✅ done |
 | 1 | C++ CPU runtime: Tensor, model loader, embedding, attention, MLP, norm, sampling | ✅ done (2026-08-12) — `tests/model_test.cpp` matches the PyTorch reference to ~1e-6; `examples/generate.cpp` produces coherent text end-to-end with no PyTorch involved at inference (G1, G2) |
 | 2 | KV cache + cache manager, benchmark with/without cache | ✅ done (2026-08-12) — `tests/kv_cache_test.cpp`: cached vs. recomputed logits match with max abs diff **= 0**; measured **24.6x** speedup at 50 generated tokens, **72.3x** at 200 (`runtime/cache/README.md`, spec §29 Q1) |
-| 3 | CUDA backend: tensor ops, matmul, attention, softmax, norm, MLP | ⬜ |
+| 3 | CUDA backend: tensor ops, matmul, attention, softmax, norm, MLP (naive) | ✅ done (2026-08-13) — verified on a real Tesla T4 (Google Colab, `scripts/colab_workflow.md`): every kernel matches its CPU counterpart to ~1e-6 (`cuda/README.md`), full `forward_cuda()` vs `forward()` on real trained weights matches to 1.79e-06. No CUDA-side KV cache yet — follow-up work, see `cuda/README.md` "What isn't here yet" |
 | 4 | CUDA optimization: coalescing, shared memory, fusion, buffer reuse (profile first) | ⬜ |
 | 5 | Quantization: FP16, INT8, INT4 | ⬜ |
 | 6 | Batching: static, then dynamic/continuous | ⬜ |
@@ -164,9 +164,16 @@ builds cleanly with `cmake -S . -B build -G "Visual Studio 17 2022" -A x64` and
 `ctest` passes. MSVC was chosen over MinGW specifically because `nvcc` on Windows
 requires MSVC as its host compiler, which Phase 3 (CUDA) will need.
 
-Still missing: **no NVIDIA GPU/driver** on this machine at all (no `nvidia-smi`).
-Phase 3+ (CUDA backend) needs a different machine or a cloud GPU instance — CUDA
-Toolkit installation alone won't be enough here.
+Still missing: **no NVIDIA GPU/driver** on this machine at all (no `nvidia-smi`) —
+CUDA Toolkit installation alone wouldn't be enough here.
+
+**Update (2026-08-13):** resolved via a cloud GPU instead of local hardware — Google
+Colab's free-tier Tesla T4, driven through the `claude-in-chrome` MCP tools (so
+Google credentials are never touched directly: it drives the user's own logged-in
+Chrome) plus this repo's public GitHub remote for code sync. Phase 3's CUDA backend
+was written locally (no way to even syntax-check it here) and verified entirely on
+that remote GPU. See `scripts/colab_workflow.md` for the full workflow — it's the
+plan for Phase 4 (CUDA optimization) too, not a one-off.
 
 ## 11. Engineering principles (unchanged from original spec)
 

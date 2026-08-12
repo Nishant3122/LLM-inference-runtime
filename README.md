@@ -11,15 +11,15 @@ See [`docs/architecture.md`](docs/architecture.md) for the full design and
 
 ## Status
 
-**Phase 2 — KV Cache, done** (see [Development Phases](docs/architecture.md#development-phases))
+**Phase 3 — CUDA Backend (naive), done** (see [Development Phases](docs/architecture.md#development-phases))
 
 | Phase | Status |
 |---|---|
 | 0 — Architecture & reference model | ✅ done |
 | 1 — CPU runtime | ✅ done — see `runtime/`, validated by `tests/model_test.cpp` against `tests/golden/` |
 | 2 — KV cache | ✅ done — see `runtime/cache/`; cached vs. recomputed logits match exactly (max abs diff = 0); **24.6x**–**72.3x** measured speedup, see `runtime/cache/README.md` |
-| 3 — CUDA backend | ⬜ next |
-| 4 — CUDA optimization | ⬜ not started |
+| 3 — CUDA backend | ✅ done — see `cuda/`; every kernel + the full forward pass verified against CPU on a real Tesla T4 (max abs diff ~1e-6), see `cuda/README.md`. No CUDA-side KV cache yet |
+| 4 — CUDA optimization | ⬜ next |
 | 5 — Quantization | ⬜ not started |
 | 6 — Batching | ⬜ not started |
 | 7 — Adaptive runtime | ⬜ not started |
@@ -40,10 +40,11 @@ for the reasoning and the planned progression to larger models.
 
 ## Local environment note
 
-CMake 4.4.2 and MSVC Build Tools 2022 are installed and verified — the full Phase 1
-C++ runtime builds and passes `ctest` (see `docs/architecture.md` §10). Still missing:
-**no NVIDIA GPU/driver** on this machine — the CUDA backend (Phase 3+) needs a
-different machine or a cloud GPU instance.
+CMake 4.4.2 and MSVC Build Tools 2022 are installed and verified — the full CPU
+runtime builds and passes `ctest` (see `docs/architecture.md` §10). This machine still
+has no NVIDIA GPU/driver, so the CUDA backend (`cuda/`, `-DBUILD_CUDA=ON`) can't be
+built or run here — it's developed locally and verified on a free Google Colab T4 GPU
+instead; see `scripts/colab_workflow.md`.
 
 ## Quick start
 
@@ -74,6 +75,17 @@ C++ loading `model.bin` and running the forward pass itself. Generation uses a
 persistent KV cache by default (Phase 2) — pass `--no-cache` as a trailing argument to
 fall back to the Phase 1 recompute-everything path and compare timings yourself; see
 `runtime/cache/README.md` for the measured **24.6x**–**72.3x** speedup.
+
+**3. CUDA backend (Phase 3) — needs an NVIDIA GPU, e.g. a free Colab T4:**
+
+```bash
+cmake -S . -B build -DBUILD_CUDA=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build -j
+ctest --test-dir build --output-on-failure   # includes cuda_ops_test
+```
+
+See `scripts/colab_workflow.md` for the exact Colab setup this was developed and
+verified against.
 
 ## Repository layout
 
